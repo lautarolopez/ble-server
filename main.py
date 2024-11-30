@@ -1,5 +1,3 @@
-# main.py
-
 from bluezero import peripheral
 import json
 
@@ -28,8 +26,8 @@ def read_status():
     # Return the current status as JSON-encoded bytes
     return json.dumps(status).encode()
 
-# Create the peripheral
-periph = peripheral.Peripheral(adapter_addr=None, local_name='TestWithPython')
+# Create the peripheral without 'adapter_addr'
+periph = peripheral.Peripheral(local_name='TestWithPython')
 
 # Add service
 periph.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
