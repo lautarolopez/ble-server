@@ -1,4 +1,4 @@
-from bluezero import peripheral
+from bluezero import peripheral, adapter
 import json
 
 SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
@@ -26,8 +26,15 @@ def read_status():
     # Return the current status as JSON-encoded bytes
     return json.dumps(status).encode()
 
-# Create the peripheral without 'adapter_addr'
-periph = peripheral.Peripheral(local_name='TestWithPython')
+# Get the default adapter's address
+adapters = adapter.list_adapters()
+if not adapters:
+    print("No Bluetooth adapters found")
+    exit(1)
+adapter_address = adapters[0]
+
+# Create the peripheral with 'adapter_address'
+periph = peripheral.Peripheral(adapter_address=adapter_address, local_name='TestWithPython')
 
 # Add service
 periph.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
