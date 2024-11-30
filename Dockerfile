@@ -3,7 +3,7 @@
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
-# Install dependencies for Bluetooth and D-Bus
+# Install dependencies for Bluetooth, D-Bus, and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bluetooth \
     bluez \
@@ -11,7 +11,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdbus-1-dev \
     libglib2.0-dev \
     python3-dbus \
+    build-essential \
+    gcc \
+    pkg-config \
+    python3-dev \
+    libcairo2-dev \
+    libgirepository1.0-dev \
+    gir1.2-glib-2.0 \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip to the latest version
+RUN pip install --upgrade pip
 
 # Install Python dependencies
 RUN pip install bluezero
