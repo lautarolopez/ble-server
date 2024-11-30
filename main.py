@@ -1,4 +1,4 @@
-# your_script_name.py
+# main.py
 
 from bluezero import peripheral
 import json
@@ -9,68 +9,50 @@ CHAR_UUID_NOTIFY = '12345678-1234-5678-1234-56789abcdef2'
 
 status = {'running': False}
 
-class MyPeripheral(peripheral.Peripheral):
-    def __init__(self):
-        super().__init__(adapter_addr=None, local_name='TestWithPython')
-        self.add_service(MyService())
+def write_command(value, options):
+    global status
+    command = value.decode().strip().upper()
+    if command == 'START':
+        status['running'] = True
+    elif command == 'STOP':
+        status['running'] = False
+    else:
+        print(f"Unknown command: {command}")
+        return
+    # Notify clients about the status change
+    data = json.dumps(status).encode()
+    periph.update_characteristic_value(1, 2, data)
+    periph.notify(1, 2)
 
-class MyService(peripheral.Service):
-    def __init__(self):
-        super().__init__(SERVICE_UUID)
-        self.add_characteristic(WriteCharacteristic(self))
-        self.notify_characteristic = NotifyCharacteristic(self)
-        self.add_characteristic(self.notify_characteristic)
+def read_status():
+    # Return the current status as JSON-encoded bytes
+    return json.dumps(status).encode()
 
-class WriteCharacteristic(peripheral.Characteristic):
-    def __init__(self, service):
-        super().__init__(
-            service=service,
-            uuid=CHAR_UUID_WRITE,
-            flags=['write'],
-            write_callback=self.on_write
-        )
+# Create the peripheral
+periph = peripheral.Peripheral(adapter_addr=None, local_name='TestWithPython')
 
-    def on_write(self, value, options):
-        global status
-        command = value.decode().strip().upper()
-        if command == 'START':
-            status['running'] = True
-        elif command == 'STOP':
-            status['running'] = False
-        else:
-            print(f"Unknown command: {command}")
-            return
-        # Notify subscribed clients
-        data = json.dumps(status)
-        self.service.notify_characteristic.send_notify(data.encode())
+# Add service
+periph.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
 
-class NotifyCharacteristic(peripheral.Characteristic):
-    def __init__(self, service):
-        super().__init__(
-            service=service,
-            uuid=CHAR_UUID_NOTIFY,
-            flags=['notify']
-        )
-        self.notifying = False
+# Add write characteristic
+periph.add_characteristic(srv_id=1, chr_id=1, uuid=CHAR_UUID_WRITE,
+                          value=[],
+                          notifying=False,
+                          flags=['write'],
+                          write_callback=write_command)
 
-    def send_notify(self, data):
-        if self.notifying:
-            self.send_notification(data)
+# Add notify characteristic
+periph.add_characteristic(srv_id=1, chr_id=2, uuid=CHAR_UUID_NOTIFY,
+                          value=[],
+                          notifying=False,
+                          flags=['notify', 'read'],
+                          read_callback=read_status)
 
-    def read_value(self):
-        return json.dumps(status).encode()
+# Publish the peripheral
+periph.publish()
 
-    def start_notify(self):
-        self.notifying = True
-        # Send initial status
-        self.send_notify(self.read_value())
-
-    def stop_notify(self):
-        self.notifying = False
-
-def main():
-    my_peripheral = MyPeripheral()
-    my_peripheral.run()
-
-if __name__ == '__main__':
-    main()
+# Run the main loop
+try:
+    periph.run()
+except KeyboardInterrupt:
+    periph.stop()
