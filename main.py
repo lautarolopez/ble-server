@@ -1,61 +1,76 @@
-import asyncio
-from aiobleserver import Server, Service, Characteristic, Descriptor
+# your_script_name.py
 
-from aiobleserver import adapters
+from bluezero import peripheral
+import json
 
-SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0"
-CHAR_UUID_WRITE = "12345678-1234-5678-1234-56789abcdef1"
-CHAR_UUID_NOTIFY = "12345678-1234-5678-1234-56789abcdef2"
+SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
+CHAR_UUID_WRITE = '12345678-1234-5678-1234-56789abcdef1'
+CHAR_UUID_NOTIFY = '12345678-1234-5678-1234-56789abcdef2'
 
-status = {"running": False}
+status = {'running': False}
 
-class MyBLEServer(Server):
+class MyPeripheral(peripheral.Peripheral):
     def __init__(self):
-        super().__init__()
-        self.add_service(
-            Service(
-                SERVICE_UUID,
-                [
-                    Characteristic(
-                        CHAR_UUID_WRITE,
-                        Characteristic.WRITE,
-                        self.on_write,
-                    ),
-                    Characteristic(
-                        CHAR_UUID_NOTIFY,
-                        Characteristic.NOTIFY,
-                        None,
-                        self.on_subscribe,
-                    ),
-                ],
-            )
+        super().__init__(adapter_addr=None, local_name='TestWithPython')
+        self.add_service(MyService())
+
+class MyService(peripheral.Service):
+    def __init__(self):
+        super().__init__(SERVICE_UUID)
+        self.add_characteristic(WriteCharacteristic(self))
+        self.notify_characteristic = NotifyCharacteristic(self)
+        self.add_characteristic(self.notify_characteristic)
+
+class WriteCharacteristic(peripheral.Characteristic):
+    def __init__(self, service):
+        super().__init__(
+            service=service,
+            uuid=CHAR_UUID_WRITE,
+            flags=['write'],
+            write_callback=self.on_write
         )
 
-    async def on_write(self, characteristic, value, notify):
+    def on_write(self, value, options):
         global status
         command = value.decode().strip().upper()
-        if command == "START":
-            status["running"] = True
-        elif command == "STOP":
-            status["running"] = False
+        if command == 'START':
+            status['running'] = True
+        elif command == 'STOP':
+            status['running'] = False
         else:
             print(f"Unknown command: {command}")
             return
         # Notify subscribed clients
-        data = str(status).encode()
-        await characteristic.notify(data)
+        data = json.dumps(status)
+        self.service.notify_characteristic.send_notify(data.encode())
 
-    async def on_subscribe(self, characteristic, notify_func):
+class NotifyCharacteristic(peripheral.Characteristic):
+    def __init__(self, service):
+        super().__init__(
+            service=service,
+            uuid=CHAR_UUID_NOTIFY,
+            flags=['notify']
+        )
+        self.notifying = False
+
+    def send_notify(self, data):
+        if self.notifying:
+            self.send_notification(data)
+
+    def read_value(self):
+        return json.dumps(status).encode()
+
+    def start_notify(self):
+        self.notifying = True
         # Send initial status
-        data = str(status).encode()
-        await notify_func(data)
+        self.send_notify(self.read_value())
 
-async def main():
-    adapter = adapters.get_adapter()
-    server = MyBLEServer()
-    await server.start("TestWithPython", adapter)
-    print("BLE server started...")
-    await asyncio.Future()  # Run forever
+    def stop_notify(self):
+        self.notifying = False
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def main():
+    my_peripheral = MyPeripheral()
+    my_peripheral.run()
+
+if __name__ == '__main__':
+    main()
