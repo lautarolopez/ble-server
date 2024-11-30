@@ -1,7 +1,7 @@
-# Use a Debian-based Python image
-FROM python:3.9-buster
+# Use a Debian-based Python image with newer packages
+FROM python:3.9-bullseye
 
-# Install dependencies for Bluetooth, D-Bus, and build tools
+# Install dependencies for Bluetooth, D-Bus, build tools, and gobject-introspection
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bluetooth \
     bluez \
@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2-dev \
     libgirepository1.0-dev \
     gir1.2-glib-2.0 \
+    gobject-introspection \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure 'python' points to 'python3'
@@ -36,5 +38,5 @@ COPY . /app
 # Set the working directory to /app
 WORKDIR /app
 
-# Run the application using 'python3'
+# Run the application using 'python'
 CMD ["python", "main.py"]
