@@ -1,4 +1,4 @@
-from bluezero import peripheral, adapter
+from bluezero import peripheral, adapter, async_tools
 import json
 import logging
 
@@ -9,38 +9,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Constants
 SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0'
 CHAR_UUID_WRITE = '12345678-1234-5678-1234-56789abcdef1'
 CHAR_UUID_NOTIFY = '12345678-1234-5678-1234-56789abcdef2'
 
 status = {'running': False}
-notify_char = None  # To store notify characteristic for use later
 
 
-def notify_status_change():
-    """Send notification with the updated status."""
-    global notify_char, status
-    if notify_char:
-        try:
-            notify_value = json.dumps(status).encode()
-            notify_char.notify(notify_value)
-            logger.info(f"Notified status change: {status}")
-        except Exception as e:
-            logger.error(f"Failed to notify status change: {e}", exc_info=True)
-    else:
-        logger.warning("Notify characteristic is not defined")
+def read_status():
+    """
+    Read callback for the status characteristic.
+    Returns the current status as a JSON-encoded byte array.
+    """
+    logger.debug("Status read requested")
+    return json.dumps(status).encode()
 
 
 def write_command(value, options):
+    """
+    Write callback for the command characteristic.
+    Expects commands like 'START' and 'STOP' to change the status.
+    """
     global status
     try:
-        # Convert list of integers to bytes
-        byte_value = bytes(value)
-        
-        # Decode the byte string
-        command = byte_value.decode().strip().upper()
-        logger.info(f"Decoded command received: {command}")
-        
+        command = bytes(value).decode().strip().upper()
+        logger.debug(f"Command received: {command}")
+
         if command == 'START':
             status['running'] = True
             logger.info("Status changed to RUNNING")
@@ -50,72 +45,88 @@ def write_command(value, options):
         else:
             logger.warning(f"Unknown command received: {command}")
             return
-        
-        # Notify the updated status
+
         notify_status_change()
-    
     except Exception as e:
-        logger.error(f"Error in write_command: {e}", exc_info=True)
+        logger.error(f"Error handling command: {e}", exc_info=True)
 
 
-def read_status():
-    """Return the current status."""
-    logger.info("Status read requested")
-    return json.dumps(status).encode()
+def notify_status_change(characteristic=None):
+    """
+    Update the notify characteristic with the current status.
+    """
+    global status
+    try:
+        notify_value = json.dumps(status).encode()
+        if characteristic and characteristic.is_notifying:
+            characteristic.set_value(notify_value)
+            logger.info(f"Notification sent: {status}")
+    except Exception as e:
+        logger.error(f"Error sending notification: {e}", exc_info=True)
 
 
-# Main setup for the BLE server
-try:
+def notify_callback(notifying, characteristic):
+    """
+    Callback for when notifications are enabled or disabled.
+    """
+    if notifying:
+        logger.info("Notifications started")
+        notify_status_change(characteristic)
+    else:
+        logger.info("Notifications stopped")
+
+
+def main(adapter_address):
+    """
+    Set up the BLE peripheral.
+    """
+    try:
+        # Log adapter address
+        logger.info(f"Using adapter: {adapter_address}")
+
+        # Create peripheral
+        periph = peripheral.Peripheral(adapter_address, local_name='StatusServer')
+
+        # Add service
+        periph.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
+        logger.info(f"Service added with UUID: {SERVICE_UUID}")
+
+        # Add write characteristic
+        periph.add_characteristic(
+            srv_id=1,
+            chr_id=1,
+            uuid=CHAR_UUID_WRITE,
+            value=[],
+            notifying=False,
+            flags=['write'],
+            write_callback=write_command
+        )
+        logger.info(f"Write characteristic added with UUID: {CHAR_UUID_WRITE}")
+
+        # Add notify characteristic
+        periph.add_characteristic(
+            srv_id=1,
+            chr_id=2,
+            uuid=CHAR_UUID_NOTIFY,
+            value=[],
+            notifying=False,
+            flags=['notify', 'read'],
+            read_callback=read_status,
+            notify_callback=notify_callback
+        )
+        logger.info(f"Notify characteristic added with UUID: {CHAR_UUID_NOTIFY}")
+
+        # Publish and run
+        periph.publish()
+        logger.info("Peripheral published successfully")
+        async_tools.run()
+    except Exception as e:
+        logger.error(f"Setup error: {e}", exc_info=True)
+
+
+if __name__ == '__main__':
     adapters = adapter.list_adapters()
     if not adapters:
         logger.error("No Bluetooth adapters found")
         exit(1)
-
-    # Create peripheral
-    periph = peripheral.Peripheral(
-        adapter_address=adapters[0], 
-        local_name='TestWithPython'
-    )
-    logger.info(f"Using adapter: {adapters[0]}")
-
-    # Add service
-    service = periph.add_service(
-        srv_id=1, 
-        uuid=SERVICE_UUID, 
-        primary=True
-    )
-    logger.info(f"Service added with UUID: {SERVICE_UUID}")
-
-    # Add write characteristic
-    write_char = periph.add_characteristic(
-        srv_id=1, 
-        chr_id=1, 
-        uuid=CHAR_UUID_WRITE,
-        value=[],
-        notifying=False,
-        flags=['write'],
-        write_callback=write_command
-    )
-    logger.info(f"Write characteristic added with UUID: {CHAR_UUID_WRITE}")
-
-    # Add notify characteristic
-    notify_char = periph.add_characteristic(
-        srv_id=1, 
-        chr_id=2, 
-        uuid=CHAR_UUID_NOTIFY,
-        value=[],
-        notifying=True,
-        flags=['notify', 'read'],
-        read_callback=read_status
-    )
-    logger.info(f"Notify characteristic added with UUID: {CHAR_UUID_NOTIFY}")
-
-    # Publish the peripheral
-    periph.publish()
-    logger.info("Peripheral published successfully")
-
-    # Run the main loop
-    periph.run()
-
-except Exception as e:
-    logger.error(f"Setup error: {e}", exc_info=True)
+    main(adapters[0])
