@@ -2,7 +2,7 @@ from bluezero import peripheral, adapter
 import json
 import logging
 
-# Configure more detailed logging
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -14,14 +14,31 @@ CHAR_UUID_WRITE = '12345678-1234-5678-1234-56789abcdef1'
 CHAR_UUID_NOTIFY = '12345678-1234-5678-1234-56789abcdef2'
 
 status = {'running': False}
+notify_char = None  # To store notify characteristic for use later
 
-def write_command(characteristic, value):
+
+def notify_status_change():
+    """Send notification with the updated status."""
+    global notify_char, status
+    if notify_char:
+        try:
+            notify_value = json.dumps(status).encode()
+            notify_char.notify(notify_value)
+            logger.info(f"Notified status change: {status}")
+        except Exception as e:
+            logger.error(f"Failed to notify status change: {e}", exc_info=True)
+    else:
+        logger.warning("Notify characteristic is not defined")
+
+
+def write_command(value, options):
     global status
     try:
-        # Log the received raw value
-        logger.info(f"Received raw value: {value}")
+        # Convert list of integers to bytes
+        byte_value = bytes(value)
         
-        command = value.decode().strip().upper()
+        # Decode the byte string
+        command = byte_value.decode().strip().upper()
         logger.info(f"Decoded command received: {command}")
         
         if command == 'START':
@@ -34,34 +51,20 @@ def write_command(characteristic, value):
             logger.warning(f"Unknown command received: {command}")
             return
         
-        # Convert status to bytes
-        status_bytes = json.dumps(status).encode()
-        logger.debug(f"Prepared notification payload: {status_bytes}")
-        
-        # Update characteristic value
-        characteristic.value = list(status_bytes)
-        
-        # Log before notification attempt
-        logger.info("Attempting to start notification")
-        
-        # Explicitly start notification
-        if hasattr(characteristic, 'StartNotify'):
-            try:
-                characteristic.StartNotify()
-                logger.info("Notification started successfully")
-            except Exception as notify_error:
-                logger.error(f"Failed to start notification: {notify_error}")
-        else:
-            logger.warning("StartNotify method not available")
-        
+        # Notify the updated status
+        notify_status_change()
+    
     except Exception as e:
         logger.error(f"Error in write_command: {e}", exc_info=True)
 
+
 def read_status():
+    """Return the current status."""
     logger.info("Status read requested")
     return json.dumps(status).encode()
 
-# Get adapter
+
+# Main setup for the BLE server
 try:
     adapters = adapter.list_adapters()
     if not adapters:
@@ -107,10 +110,11 @@ try:
     )
     logger.info(f"Notify characteristic added with UUID: {CHAR_UUID_NOTIFY}")
 
+    # Publish the peripheral
     periph.publish()
     logger.info("Peripheral published successfully")
 
-    # Run main loop
+    # Run the main loop
     periph.run()
 
 except Exception as e:
