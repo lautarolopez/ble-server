@@ -46,11 +46,7 @@ def write_command(value, options):
             logger.warning(f"Unknown command received: {command}")
             return
 
-        # Trigger notification manually after a write
-        if options and 'characteristic' in options:
-            notify_status_change(options['characteristic'])
-        else:
-            logger.warning("Characteristic not found in options for notification")
+        notify_status_change()
     except Exception as e:
         logger.error(f"Error handling command: {e}", exc_info=True)
 
@@ -65,8 +61,6 @@ def notify_status_change(characteristic=None):
         if characteristic and characteristic.is_notifying:
             characteristic.set_value(notify_value)
             logger.info(f"Notification sent: {status}")
-        else:
-            logger.warning("Notification skipped; characteristic not notifying")
     except Exception as e:
         logger.error(f"Error sending notification: {e}", exc_info=True)
 
